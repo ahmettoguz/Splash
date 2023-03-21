@@ -1,9 +1,9 @@
-<h1 align="center"></h1> 
+<h1 align="center">Splash</h1> 
 
 <br>
 
 <div align="center">
-    <img width=150 src="">
+    <img width=250 src="/favicon.ico">
 </div>
 
 <br/>
@@ -27,7 +27,7 @@ https://user-images.githubusercontent.com/101711642/226581750-ed64f4f7-41ec-4c58
 <br/>
 
 ## Introduction
-
+This game is one of the games that most of us play with friends in childhood, loving it and hating it so much. I decided to make this game myself, which I love to play with my brother. And it turned out to be a pretty cool project. This game, which is one of the games whose old version cannot be played with the removal of Adobe flash player, can now be on your computers with this desktop application.
 
 <br/>
 
@@ -40,6 +40,12 @@ https://user-images.githubusercontent.com/101711642/226581750-ed64f4f7-41ec-4c58
 <br/>
 
 ## Features
+
+* 2 Player option.
+* There are 50 different level which is getting difficult.
+* There are time constraint for all different levels.
+* Score (number of ballons popped) is displayed at the end of the level. 
+
 
 <br/>
 
