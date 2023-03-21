@@ -1,0 +1,1833 @@
+/*********
+   CTIS164 - Template Source Program
+----------
+STUDENT :
+SECTION :
+HOMEWORK:
+----------
+PROBLEMS:
+----------
+ADDITIONAL FEATURES:
+*********/
+/*
+(Dörtgen çizimi) gl rect2f(x, y, x, y);
+*/
+/*
+(noktali çizgi)
+//  glEnable(GL_LINE_STIPPLE);
+//  glLineStipple(1, 0x00F0);
+//  glDisable(GL_LINE_STIPPLE);
+*/
+/*
+(translate trigo)
+void vertex(point_t P, point_t position, double angle) {
+	double xp = (P.x * cos(angle) - P.y * sin(angle)) + position.x;
+	double yp = (P.x * sin(angle) + P.y * cos(angle)) + position.y;
+	vertex({ 8, 25 }, p.pos, angle);
+*/
+/*
+vektör hizi= mulV(ENEMY_SPEED, unitV(subV(P.pos, E.pos)));
+vektör yeri belirlerken= addV(p.pos, pol2rec({ 30, p.angle }));
+vektör ilerleme = subV(E.pos, E.vel);
+*/
+/*
+ (API command to midfy ModelView(MV) matrix)
+
+	glLoadIdentity(); mv = identity        main i 1 diğerleri 0
+	glTranslatef(tx, ty, 0);  mv = mv. (main yine 1   son column = tx, ty, 1) son argüman0: 2 dim olduğu için
+	glScalef(sx, sy, 1); mv = mv.(maini sx, sy, 1) diğerleri 0
+	glRotatef(Q, 0, 0, 1); mv = mv.([cosq, -sinQ, 0], [sinQ  cosQ 0], [0, 0, 1])
+bunları yapınca glvertex2f değişiyo tekrar initialize etmek istiyorsan glLoadIdentity(); yi çağır.
+
+Ardı ardına rotate ve translate koydun mesela sondakini, ilk önce yapar yani mesela önce translate sonra rotati yapar çünkü en son oluşan matrixte önce rotate yapılır ama translate yapılırken sonra uygulanır.
+
+*/
+/*
+Stringi değiştirmemek için fonksiyona giderken
+(const char name[])
+*/
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#include <GL/glut.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <stdarg.h>
+#include <time.h>
+#include <windows.h>
+
+#define WINDOW_WIDTH  1500
+#define WINDOW_HEIGHT  750
+#define TIMER_PERIOD    16 // Period for the timer.
+#define TIMER_ON         1 // 0:disable timer, 1:enable timer
+#define D2R 0.0174532
+
+#define MAXBALL 100
+
+#define SMALL 0
+#define MID 1
+#define BIG 2
+#define HUGE 3
+
+#define SMALLRAD 8
+#define MIDRAD 30
+#define BIGRAD 50
+#define HUGERAD 70
+
+#define PLAYSCREEN 0
+#define STARTSCREEN 1
+#define LOSESCREEN 2
+#define WINSCREEN 3
+
+#define STOPTIME 2000
+
+/* Global Variables for Template File */
+bool up = false, down = false, right = false, left = false;
+bool right1 = false, left1 = false, up1 = false;
+int winWidth, winHeight, timems, times, timeremain, lastballsize, lvl, stop, score; //skoru yap değiştir
+float barincrease, dist;
+char screen;
+
+typedef struct {
+	int r, g, b;
+}color_t;
+typedef struct {
+	float x, y;
+}point_t;
+typedef struct {
+	point_t p;
+	double angle;
+	double speed;
+	color_t c1;
+	color_t c2;
+}player_t;
+typedef struct {
+	color_t c;
+	point_t p;
+	bool active;
+	float speed;
+}arrow_t;
+typedef struct {
+	point_t p, velvector;
+	float velvectorspeed;
+	char type;
+	bool active;
+	color_t c;
+}ball_t;
+
+point_t velV_small = { 2,-5.2 };
+point_t velV_mid = { 2,-6.5 };
+point_t velV_big = { 2,-7.5 };
+point_t velV_huge = { 2,-9.5 };
+
+color_t rc; //random color
+arrow_t a1, a2; //arrows
+player_t p1, p2; //players
+point_t lastpoint1, lastpoint2; //for arrow locations
+ball_t ball[MAXBALL];
+
+//
+// to draw circle, center at (x,y)
+// radius r
+//
+void circle(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+	glBegin(GL_POLYGON);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI * i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void circle_wire(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+
+	glBegin(GL_LINE_LOOP);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI * i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void print(int x, int y, const char* string, void* font)
+{
+	int len, i;
+
+	glRasterPos2f(x, y);
+	len = (int)strlen(string);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, string[i]);
+	}
+}
+
+// display text with variables.
+// vprint(-winWidth / 2 + 10, winHeight / 2 - 20, GLUT_BITMAP_8_BY_13, "ERROR: %d", numClicks);
+void vprint(int x, int y, void* font, const char* string, ...)
+{
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+
+	int len, i;
+	glRasterPos2f(x, y);
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, str[i]);
+	}
+}
+
+// vprint2(-50, 0, 0.35, "00:%02d", timeCounter);
+void vprint2(int x, int y, float size, const char* string, ...) {
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+	glPushMatrix();
+	glTranslatef(x, y, 0);
+	glScalef(size, size, 1);
+
+	int len, i;
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutStrokeCharacter(GLUT_STROKE_ROMAN, str[i]);
+	}
+	glPopMatrix();
+}
+
+int find_Available_Index(ball_t ball[], int* lbsize)
+{
+	int i = 0;
+
+	while (i < *lbsize)
+	{
+		if (ball[i].active == false)
+			return(i);
+		i++;
+	}
+
+	//increase last ball size
+	(*lbsize)++;
+	return(*lbsize - 1);
+}
+
+//add_Ball(HUGE, { 0,0 }, 2, false, { 0,255,0 }, ball, &lastballsize);
+void add_Ball(int tp, point_t p, float dx, bool updown, color_t c, ball_t ball[], int* lbindex)
+{
+	//find available space to add ball
+	int availableindex = find_Available_Index(ball, lbindex);
+
+	//necessary position information
+	{
+		ball[availableindex].active = true;
+		ball[availableindex].p = { p.x, p.y };
+		ball[availableindex].c = { c.r,c.g,c.b };
+		ball[availableindex].type = tp;
+	}
+
+	//velocity vector
+	{
+		if (ball[availableindex].type == SMALL)
+		{
+			if (updown == true)
+				ball[availableindex].velvector.y = -velV_small.y;
+			else
+				ball[availableindex].velvector.y = velV_small.y;
+
+			ball[availableindex].velvector.x = dx;
+			ball[availableindex].velvectorspeed = ball[availableindex].velvector.y;
+		}
+		else if (ball[availableindex].type == MID)
+		{
+			if (updown == true)
+				ball[availableindex].velvector.y = -velV_mid.y;
+			else
+				ball[availableindex].velvector.y = velV_mid.y;
+
+			ball[availableindex].velvector.x = dx;
+
+			ball[availableindex].velvectorspeed = ball[availableindex].velvector.y;
+		}
+		else if (ball[availableindex].type == BIG)
+		{
+			if (updown == true)
+				ball[availableindex].velvector.y = -velV_big.y;
+			else
+				ball[availableindex].velvector.y = velV_big.y;
+
+			ball[availableindex].velvector.x = dx;
+
+			ball[availableindex].velvectorspeed = ball[availableindex].velvector.y;
+		}
+		else if (ball[availableindex].type == HUGE)
+		{
+			if (updown == true)
+				ball[availableindex].velvector.y = -velV_huge.y;
+			else
+				ball[availableindex].velvector.y = velV_huge.y;
+
+			ball[availableindex].velvector.x = dx;
+
+			ball[availableindex].velvectorspeed = ball[availableindex].velvector.y;
+		}
+	}
+}
+
+void inittolvl(int lvll, int* lvl, ball_t ball[], int* lastballsize, player_t* p1, player_t* p2, arrow_t* a1, arrow_t* a2, float* barincrease, int* timeremain, int* timems, int* times, int* stop, char* screen)
+{
+	//initialize screen
+	*screen = PLAYSCREEN;
+
+	//initialize ball to inactive, ballindex
+	{
+		for (*lastballsize = 0; *lastballsize < MAXBALL; (*lastballsize)++)
+			ball[*lastballsize].active = false;
+
+		*lastballsize = 0;
+	}
+
+	//initialize lvl
+	{
+		{
+			*lvl = lvll;
+
+			//add_Ball(HUGE, { 0,0 }, -2, false, { 0,255,0 }, ball, lastballsize);
+			//add_Ball(HUGE, { 0,0 }, +2, false, { 0,255,0 }, ball, lastballsize);
+			add_Ball(HUGE, { 0,0 }, 0, false, { 0,255,0 }, ball, lastballsize);
+			//add_Ball(BIG, { 0,0 }, -2, false, { 255,0,0 }, ball, &lastballsize);
+			//add_Ball(MID, { 0,0 }, -2, false, { 255,0,0 }, ball, &lastballsize);
+			//add_Ball(SMALL, { 0,0 }, -2, false, { 255,0,0 }, ball, &lastballsize);
+		}
+	}
+
+	//initialize time
+	{
+		*timeremain = 30;
+		*timems = 0;
+		*times = 0;
+		*stop = 0;
+		*barincrease = 1000. / *timeremain;
+	}
+
+	//initialize arrow
+	{
+		a1->active = false;
+		a1->c.r = 255;
+		a1->c.g = 0;
+		a1->c.b = 0;
+		a1->speed = 10;
+
+		a2->active = false;
+		a2->c.r = 255;
+		a2->c.g = 0;
+		a2->c.b = 0;
+		a2->speed = 10;
+	}
+
+	//initialize players
+	{
+		p1->p = { 300 ,-277 };
+		p1->c1 = { 40, 100, 10 };
+		//p1->c2 = { 128, 0, 255 };
+		p1->c2 = { 64,255,128 };
+		p1->speed = 5;
+
+		p2->p = { -300 ,-277 };
+		p2->c1 = { 40, 100, 100 };
+		p2->c2 = { 255, 128, 64 };
+		p2->speed = 5;
+	}
+}
+
+color_t random_Color(void)
+{
+	return{ (rand() % ((255 + 1) - 0) + 0), (rand() % ((255 + 1) - 0) + 0), (rand() % ((255 + 1) - 0) + 0) };
+}
+
+int calculate_Last_Size(ball_t b[])
+{
+	int i = MAXBALL - 1;
+	while (i >= 0)
+	{
+		if (b[i].active == true)
+			return(i + 1);
+		i--;
+	}
+	return(0);
+}
+
+void check_ball_hits_player(ball_t b[], player_t p1, player_t p2, int* lbsize)
+{
+	//calculate last ball size
+	*lbsize = calculate_Last_Size(ball);
+
+	float distance1;
+	float distance2;
+
+	for (int i = 0; i < *lbsize; i++)
+	{
+		if (b[i].active == true)
+		{
+			//calculate distance for p1
+			{
+				if (b[i].type == SMALL)
+				{
+					distance1 = sqrt((b[i].p.x - p1.p.x) * (b[i].p.x - p1.p.x) + (b[i].p.y - p1.p.y) * (b[i].p.y - p1.p.y)) - SMALLRAD - 7;
+					distance2 = sqrt((b[i].p.x - p2.p.x) * (b[i].p.x - p2.p.x) + (b[i].p.y - p2.p.y) * (b[i].p.y - p2.p.y)) - SMALLRAD - 7;
+				}
+				else if (b[i].type == MID)
+				{
+					distance1 = sqrt((b[i].p.x - p1.p.x) * (b[i].p.x - p1.p.x) + (b[i].p.y - p1.p.y) * (b[i].p.y - p1.p.y)) - MIDRAD - 7;
+					distance2 = sqrt((b[i].p.x - p2.p.x) * (b[i].p.x - p2.p.x) + (b[i].p.y - p2.p.y) * (b[i].p.y - p2.p.y)) - MIDRAD - 7;
+				}
+				else if (b[i].type == BIG)
+				{
+					distance1 = sqrt((b[i].p.x - p1.p.x) * (b[i].p.x - p1.p.x) + (b[i].p.y - p1.p.y) * (b[i].p.y - p1.p.y)) - BIGRAD - 7;
+					distance2 = sqrt((b[i].p.x - p2.p.x) * (b[i].p.x - p2.p.x) + (b[i].p.y - p2.p.y) * (b[i].p.y - p2.p.y)) - BIGRAD - 7;
+				}
+				else if (b[i].type == HUGE)
+				{
+					distance1 = sqrt((b[i].p.x - p1.p.x) * (b[i].p.x - p1.p.x) + (b[i].p.y - p1.p.y) * (b[i].p.y - p1.p.y)) - HUGERAD - 7;
+					distance2 = sqrt((b[i].p.x - p2.p.x) * (b[i].p.x - p2.p.x) + (b[i].p.y - p2.p.y) * (b[i].p.y - p2.p.y)) - HUGERAD - 7;
+				}
+			}
+
+			if (distance1 <= 0 || distance2 <= 0)
+				stop = STOPTIME;
+		}
+	}
+}
+
+
+void hit_split_balls(ball_t* b, int* lbsize, arrow_t* a)
+{
+	//remove arrow
+	a->active = false;
+
+	//remove ball
+	b->active = false;
+
+	//give new colors
+	rc = random_Color();
+
+	//add 2 new ball if it is not small one
+	if (b->type == MID)
+	{
+		add_Ball(SMALL, b->p, 2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+		add_Ball(SMALL, b->p, -2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+	}
+	else if (b->type == BIG)
+	{
+		add_Ball(MID, b->p, 2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+		add_Ball(MID, b->p, -2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+	}
+	else if (b->type == HUGE)
+	{
+		add_Ball(BIG, b->p, 2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+		add_Ball(BIG, b->p, -2, true, { rc.r,rc.g,rc.b }, ball, lbsize);
+	}
+}
+
+void arrow_Hit(arrow_t* a1, arrow_t* a2, ball_t b[], int* lbsize)
+{
+	if (a1->active == true)
+	{
+		//calculate last ball index 
+		*lbsize = calculate_Last_Size(b);
+
+		for (int i = 0; i < *lbsize && a1->active == true; i++)
+			if (b[i].active == true)
+			{
+				for (int j = -320; j <= a1->p.y && b[i].active == true && a1->active == true; j++)
+				{
+					//calculate distance
+					{
+						if (b[i].type == SMALL)
+						{
+							dist = sqrt((b[i].p.x - a1->p.x) * (b[i].p.x - a1->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - SMALLRAD;
+						}
+						else if (b[i].type == MID)
+						{
+							dist = sqrt((b[i].p.x - a1->p.x) * (b[i].p.x - a1->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - MIDRAD;
+						}
+						else if (b[i].type == BIG)
+						{
+							dist = sqrt((b[i].p.x - a1->p.x) * (b[i].p.x - a1->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - BIGRAD;
+						}
+						else if (b[i].type == HUGE)
+						{
+							dist = sqrt((b[i].p.x - a1->p.x) * (b[i].p.x - a1->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - HUGERAD;
+						}
+					}
+
+					//hit
+					if (dist <= 0)
+					{
+						hit_split_balls(&b[i], lbsize, a1);
+						*lbsize = calculate_Last_Size(b);
+						//son indexi göstermek için 
+						//printf("%d\n", *lbsize);
+					}
+				}
+			}
+	}
+
+	if (a2->active == true)
+	{
+		//calculate last ball index 
+		*lbsize = calculate_Last_Size(b);
+
+		for (int i = 0; i < *lbsize && a2->active == true; i++)
+			if (b[i].active == true)
+			{
+				for (int j = -320; j <= a2->p.y && b[i].active == true && a2->active == true; j++)
+				{
+					//calculate distance
+					{
+						if (b[i].type == SMALL)
+						{
+							dist = sqrt((b[i].p.x - a2->p.x) * (b[i].p.x - a2->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - SMALLRAD;
+						}
+						else if (b[i].type == MID)
+						{
+							dist = sqrt((b[i].p.x - a2->p.x) * (b[i].p.x - a2->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - MIDRAD;
+						}
+						else if (b[i].type == BIG)
+						{
+							dist = sqrt((b[i].p.x - a2->p.x) * (b[i].p.x - a2->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - BIGRAD;
+						}
+						else if (b[i].type == HUGE)
+						{
+							dist = sqrt((b[i].p.x - a2->p.x) * (b[i].p.x - a2->p.x) + (b[i].p.y - j) * (b[i].p.y - j)) - HUGERAD;
+						}
+					}
+
+					//hit
+					if (dist <= 0)
+					{
+						hit_split_balls(&b[i], lbsize, a2);
+						*lbsize = calculate_Last_Size(b);
+						//son indexi göstermek için printf("%d\n", *lbsize);
+					}
+				}
+			}
+	}
+}
+
+void reflect_ball(ball_t* b, int* lbsize)
+{
+	//left reflection
+	{
+		if (b->type == SMALL && b->p.x - SMALLRAD <= -734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == SMALL && b->p.x - SMALLRAD <= -734)
+					b->p.x = -734 + SMALLRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == MID && b->p.x - MIDRAD <= -734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == MID && b->p.x - MIDRAD <= -734)
+					b->p.x = -734 + MIDRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == BIG && b->p.x - BIGRAD <= -734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == BIG && b->p.x - BIGRAD <= -734)
+					b->p.x = -734 + BIGRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == HUGE && b->p.x - HUGERAD <= -734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == HUGE && b->p.x - HUGERAD <= -734)
+					b->p.x = -734 + HUGERAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+	}
+
+	//right reflection
+	{
+		if (b->type == SMALL && b->p.x + SMALLRAD >= 734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == SMALL && b->p.x + SMALLRAD >= 734)
+					b->p.x = 734 - SMALLRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == MID && b->p.x + MIDRAD >= 734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == MID && b->p.x + MIDRAD >= 734)
+					b->p.x = 734 - MIDRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == BIG && b->p.x + BIGRAD >= 734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == BIG && b->p.x + BIGRAD >= 734)
+					b->p.x = 734 - BIGRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+		else if (b->type == HUGE && b->p.x + HUGERAD >= 734)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == BIG && b->p.x + HUGERAD >= 734)
+					b->p.x = 734 - HUGERAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.x = -b->velvector.x;
+		}
+	}
+
+	//Bottom reflect with velocity vector
+	{
+		if (b->type == SMALL && b->p.y - SMALLRAD <= -316)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == SMALL && b->p.y - SMALLRAD <= -316)
+					b->p.y = -316 + SMALLRAD;
+			}
+
+			//velocity vektörünü ayarla
+			if (b->velvectorspeed > 0)
+				b->velvector.y = b->velvectorspeed;
+			else
+				b->velvector.y = -b->velvectorspeed;
+		}
+		else if (b->type == MID && b->p.y - MIDRAD <= -316)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == MID && b->p.y - MIDRAD <= -316)
+					b->p.y = -316 + MIDRAD;
+			}
+
+			//velocity vektörünü ayarla
+			if (b->velvectorspeed > 0)
+				b->velvector.y = b->velvectorspeed;
+			else
+				b->velvector.y = -b->velvectorspeed;
+		}
+		else if (b->type == BIG && b->p.y - BIGRAD <= -316)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == BIG && b->p.y - BIGRAD <= -316)
+					b->p.y = -316 + BIGRAD;
+			}
+
+			//velocity vektörünü ayarla
+			if (b->velvectorspeed > 0)
+				b->velvector.y = b->velvectorspeed;
+			else
+				b->velvector.y = -b->velvectorspeed;
+		}
+		else if (b->type == HUGE && b->p.y - HUGERAD <= -316)
+		{
+			//prevent to go below the ground
+			{
+				if (b->type == HUGE && b->p.y - HUGERAD <= -316)
+					b->p.y = -316 + HUGERAD;
+			}
+
+			//velocity vektörünü ayarla
+			if (b->velvectorspeed > 0)
+				b->velvector.y = b->velvectorspeed;
+			else
+				b->velvector.y = -b->velvectorspeed;
+		}
+	}
+
+	//top reflection
+	{
+		if (b->type == SMALL && b->p.y + SMALLRAD >= 345)
+		{
+			//prevent to go beyond the ground
+			{
+				if (b->type == SMALL && b->p.y + SMALLRAD >= 345)
+					b->p.y = 345 - SMALLRAD;
+			}
+
+			//velocity vektörünü ayarla
+			b->velvector.y = -b->velvectorspeed;
+		}
+		else if (b->type == MID && b->p.y + MIDRAD >= 345)
+		{
+			//prevent to go beyond the ground
+			{
+				if (b->type == MID && b->p.y + MIDRAD >= 345)
+					b->p.y = 345 - MIDRAD;
+			}
+
+			//split 2 ball
+			{
+				//remove ball
+				b->active = false;
+
+				//give new colors
+				rc = random_Color();
+
+				//add 2 new ball if it is not small one
+				{
+					add_Ball(SMALL, b->p, 2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+					add_Ball(SMALL, b->p, -2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+					*lbsize = calculate_Last_Size(ball);
+				}
+			}
+
+			//velocity vektörünü ayarla
+			//b->velvector.y = -b->velvectorspeed;
+		}
+		else if (b->type == BIG && b->p.y + BIGRAD >= 345)
+		{
+			//prevent to go beyond the spikes
+			{
+				if (b->type == BIG && b->p.y + BIGRAD >= 345)
+					b->p.y = 345 - BIGRAD;
+			}
+
+			//velocity vektörünü ayarla
+			//b->velvector.y = -b->velvectorspeed;
+
+			//split 2 ball
+			{
+				//remove ball
+				b->active = false;
+
+				//give new colors
+				rc = random_Color();
+
+				//add 2 new ball if it is not small one
+				{
+					add_Ball(MID, b->p, 2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+					add_Ball(MID, b->p, -2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+				}
+				*lbsize = calculate_Last_Size(ball);
+			}
+		}
+		else if (b->type == HUGE && b->p.y + HUGERAD >= 345)
+		{
+			//prevent to go beyond the spikes
+			{
+				if (b->type == HUGE && b->p.y + HUGERAD >= 345)
+					b->p.y = 345 - HUGERAD;
+			}
+
+			//velocity vektörünü ayarla
+			//b->velvector.y = -b->velvectorspeed;
+
+			//split 2 ball
+			{
+				//remove ball
+				b->active = false;
+
+				//give new colors
+				rc = random_Color();
+
+				//add 2 new ball if it is not small one
+				{
+					add_Ball(BIG, b->p, 2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+					add_Ball(BIG, b->p, -2, false, { rc.r,rc.g,rc.b }, ball, lbsize);
+					*lbsize = calculate_Last_Size(ball);
+				}
+			}
+		}
+	}
+}
+
+void move_ball(ball_t b[], int* lbindex)
+{
+	for (int i = 0; i < MAXBALL; i++)
+	{
+		if (b[i].active == true)
+		{
+			b[i].p.x += b[i].velvector.x;
+			b[i].p.y += b[i].velvector.y;
+
+			b[i].velvector.y -= 0.1;
+
+			//check the reflection of the ball
+			reflect_ball(&b[i], lbindex);
+		}
+	}
+}
+
+void move_player(player_t* p1, player_t* p2)
+{
+	//player 1
+	{
+		if (p1->p.x >= -700 && left == true)
+		{
+			p1->p.x -= p1->speed;
+			p1->angle += 10;
+		}
+
+		if (p1->p.x <= +700 && right == true)
+		{
+			p1->p.x += p1->speed;
+			p1->angle -= 10;
+		}
+	}
+
+	//player 2
+	{
+		if (p2->p.x >= -700 && left1 == true)
+		{
+			p2->p.x -= p2->speed;
+			p2->angle += 10;
+		}
+
+		if (p2->p.x <= +700 && right1 == true)
+		{
+			p2->p.x += p2->speed;
+			p2->angle -= 10;
+		}
+	}
+}
+
+void move_arrow(arrow_t* a)
+{
+	if (a->active == true)
+	{
+		//check hitpoint
+		if (a->p.y >= 352)
+			a->active = false;
+
+		a->p.y += a->speed;
+	}
+}
+
+void vertex(point_t P, point_t position, double angle) {
+	double xp = (P.x * cos(angle * D2R) - P.y * sin(angle * D2R)) + position.x;
+	double yp = (P.x * sin(angle * D2R) + P.y * cos(angle * D2R)) + position.y;
+
+	glVertex2f(xp, yp);
+}
+
+void dispbackrec()
+{
+	glBegin(GL_QUADS);
+	glColor3ub(213, 213, 250);
+	glVertex2f(-750, -375);
+	glVertex2f(750, -375);
+
+	glColor3ub(130, 130, 230);
+	glVertex2f(750, 375);
+	glVertex2f(-750, 375);
+
+	glEnd();
+}
+
+void disp_frames()
+{
+	glColor3f(0.3, 0.2, 0.7);
+
+	//boxes of frames
+	{
+		//top
+		glRectf(-800, 500, 800, 360);
+
+		//left
+		glRectf(-800, -375, -735, 360);
+
+		//right
+		glRectf(800, -375, 735, 500);
+
+		//bottom
+		glRectf(-800, -500, 800, -320);
+	}
+
+	glLineWidth(6);
+	glColor3f(0, 0, 0);
+
+	//frames
+	{
+
+		glBegin(GL_LINES);
+
+		//left					//6 3  //çizginin sınırı -735 de
+		glVertex2f(-738, 360);
+		glVertex2f(-738, -320);
+
+		//right					//6 3  //çizginin sınırı -735 de
+		glVertex2f(738, 360);
+		glVertex2f(738, -320);
+
+		//top
+		glVertex2f(-741, 360);
+		glVertex2f(741, 360);
+
+		//bottom
+		glVertex2f(-741, -320);
+		glVertex2f(741, -320);
+
+		glEnd();
+	}
+
+	//display spikes
+	{
+		//spikes
+		{
+			glBegin(GL_TRIANGLES);
+			for (int i = -730; i <= 720; i += 28)
+			{
+				glColor3f(0.5, 0.3, 1);
+				glVertex2f(i, 357);
+				glVertex2f(i + 30, 357);
+
+				glColor3f(1, 0, 0);
+				glVertex2f(i + 15, 345);
+			}
+			glEnd();
+		}
+
+		//frames
+		{
+			glColor3f(0, 0, 0);
+			glLineWidth(2);
+			for (int i = -730; i <= 720; i += 28)
+			{
+				glBegin(GL_LINE_LOOP);
+				glVertex2f(i, 357);
+				glVertex2f(i + 30, 357);
+				glVertex2f(i + 15, 345);
+				glEnd();
+			}
+		}
+	}
+}
+
+void disp_info()
+{
+	glColor3f(1, 0, 1);
+	glLineWidth(2);
+
+	//time bar
+	{
+		glBegin(GL_LINE_LOOP);
+
+		glVertex2f(-500, -330);
+		glVertex2f(500, -330);
+		glVertex2f(500, -336);
+		glVertex2f(-500, -336);
+
+		glEnd();
+	}
+
+	//time line
+	{
+		if (double(times) * barincrease + double(timems) / 1000 * barincrease - 500 <= 500)
+		{
+
+			glColor3f(0, 1, 0);
+			glLineWidth(9);
+			glBegin(GL_POLYGON);
+
+			glVertex2f(times * barincrease - 500 + double(timems) / 1000 * barincrease, -336);
+			glVertex2f(times * barincrease - 500 + double(timems) / 1000 * barincrease, -330);
+			glVertex2f(500, -330);
+			glVertex2f(500, -336);
+
+			glEnd();
+		}
+	}
+
+	//time information
+	{
+		glLineWidth(1.5);
+		if (double(times) * barincrease + double(timems) / 1000 * barincrease - 500 <= 500)
+		{
+			if ((1000 - timems) / 100 != 10)
+				vprint2(515, -338, 0.13, "%02d:%.01d", timeremain - times, (1000 - timems) / 100);
+			else
+				vprint2(515, -338, 0.13, "%02d:9", timeremain - times);
+		}
+		else
+			vprint2(515, -338, 0.13, "00:0");
+	}
+}
+
+void disp_player(player_t p)
+{
+	//pipe
+	{
+		glColor3ub(p.c2.r, p.c2.g, p.c2.b);
+
+
+		glRectf(p.p.x - 7, p.p.y + 35, p.p.x + 7, p.p.y + 15);
+
+		//frame
+		{
+			glLineWidth(2);
+			glColor3f(0, 0, 0);
+			glBegin(GL_LINE_STRIP);
+			glVertex2f(p.p.x - 7, p.p.y + 15);
+			glVertex2f(p.p.x - 7, p.p.y + 35);
+			glVertex2f(p.p.x + 7, p.p.y + 35);
+			glVertex2f(p.p.x + 7, p.p.y + 15);
+			glEnd();
+		}
+	}
+
+	//rectangle
+	{
+		//recltange
+		{
+			glColor3ub(p.c1.r, p.c1.g, p.c1.b);
+			glRectf(p.p.x - 30, p.p.y + 15, p.p.x + 30, p.p.y - 20);
+		}
+
+		//frame
+		{
+			glColor3f(0, 0, 0);
+			glBegin(GL_LINE_STRIP);
+
+			glVertex2f(p.p.x + 7, p.p.y + 15);
+			glVertex2f(p.p.x - 7, p.p.y + 15);
+			glVertex2f(p.p.x - 30, p.p.y + 15);
+			glVertex2f(p.p.x - 30, p.p.y - 20);
+			glVertex2f(p.p.x + 30, p.p.y - 20);
+			glVertex2f(p.p.x + 30, p.p.y + 15);
+			glVertex2f(p.p.x + 7, p.p.y + 15);
+
+			glEnd();
+		}
+
+		//ornament
+		{
+			glBegin(GL_POLYGON);
+
+
+			glColor3ub(168, 168, 255);
+			glVertex2f(p.p.x + 30, p.p.y - 2.5);
+
+			glColor3ub(p.c2.r, p.c2.g, p.c2.b);
+			glVertex2f(p.p.x + 7, p.p.y + 14);
+			glVertex2f(p.p.x - 7, p.p.y + 14);
+
+			glColor3ub(168, 168, 255);
+			glVertex2f(p.p.x - 30, p.p.y - 2.5);
+
+			glColor3ub(128, 128, 255);
+			glVertex2f(p.p.x, p.p.y - 20);
+			glEnd();
+
+			//frames
+			glBegin(GL_LINE_LOOP);
+			glColor3f(0, 0, 0);
+
+			glVertex2f(p.p.x + 30, p.p.y - 2.5);
+			glVertex2f(p.p.x + 7, p.p.y + 15);
+			glVertex2f(p.p.x - 7, p.p.y + 15);
+			glVertex2f(p.p.x - 30, p.p.y - 2.5);
+			glVertex2f(p.p.x, p.p.y - 20);
+
+			glEnd();
+		}
+	}
+
+	//hit circle
+	{
+		glColor3f(1, 0, 0);
+		circle(p.p.x, p.p.y, 7);
+		glColor3f(0, 0, 0);
+		circle_wire(p.p.x, p.p.y, 7);
+	}
+
+	//circles
+	{
+		//cicrles
+		{
+			glColor3ub(128, 128, 255);
+
+			//left 
+			circle(p.p.x - 20, p.p.y - 30, 10);
+
+			//mid
+			circle(p.p.x, p.p.y - 30, 10);
+
+			//right 
+			circle(p.p.x + 20, p.p.y - 30, 10);
+		}
+
+		//frames
+		{
+			glLineWidth(2);
+			glColor3f(0, 0, 0);
+
+			//left 
+			circle_wire(p.p.x - 20, p.p.y - 30, 10);
+
+			//mid
+			circle_wire(p.p.x, p.p.y - 30, 10);
+
+			//right 
+			circle_wire(p.p.x + 20, p.p.y - 30, 10);
+		}
+
+		//ornaments
+		{
+			glColor3f(0, 0, 0);
+
+			glBegin(GL_LINES);
+
+			//left
+			{
+				vertex({ 0, 10 }, { p.p.x - 20,p.p.y - 30 }, p.angle);
+				vertex({ 0, -10 }, { p.p.x - 20,p.p.y - 30 }, p.angle);
+				vertex({ 10, 0 }, { p.p.x - 20,p.p.y - 30 }, p.angle);
+				vertex({ -10, 0 }, { p.p.x - 20,p.p.y - 30 }, p.angle);
+			}
+
+			//mid
+			{
+				vertex({ 0, 10 }, { p.p.x  ,p.p.y - 30 }, p.angle);
+				vertex({ 0, -10 }, { p.p.x ,p.p.y - 30 }, p.angle);
+				vertex({ 10, 0 }, { p.p.x ,p.p.y - 30 }, p.angle);
+				vertex({ -10, 0 }, { p.p.x ,p.p.y - 30 }, p.angle);
+			}
+
+			//right
+			{
+				vertex({ 0, 10 }, { p.p.x + 20,p.p.y - 30 }, p.angle);
+				vertex({ 0, -10 }, { p.p.x + 20,p.p.y - 30 }, p.angle);
+				vertex({ 10, 0 }, { p.p.x + 20,p.p.y - 30 }, p.angle);
+				vertex({ -10, 0 }, { p.p.x + 20,p.p.y - 30 }, p.angle);
+			}
+
+			glEnd();
+		}
+	}
+}
+
+void disp_arrow(arrow_t a, player_t p, point_t lp)
+{
+	if (a.active == true)
+	{
+		glLineWidth(3);
+
+		//straight line
+		{
+			glBegin(GL_LINES);
+
+			glColor3ub(a.c.r, a.c.g, a.c.b);
+			glVertex2f(a.p.x, a.p.y);
+
+			glColor3f(0, 0, 0);
+			glVertex2f(lp.x, lp.y - 40);
+
+			glEnd();
+		}
+
+		//left arrow
+		{
+			glBegin(GL_LINES);
+
+			glColor3ub(a.c.r, a.c.g, a.c.b);
+			glVertex2f(a.p.x, a.p.y);
+			glVertex2f(a.p.x - 7, a.p.y - 10);
+
+			glEnd();
+		}
+
+		//right arrow
+		{
+			glBegin(GL_LINES);
+
+			glVertex2f(a.p.x, a.p.y);
+			glVertex2f(a.p.x + 7, a.p.y - 10);
+
+			glEnd();
+		}
+	}
+}
+
+void disp_balls(ball_t b[])
+{
+	glLineWidth(2);
+
+	for (int i = 0; i < MAXBALL; i++)
+	{
+		if (b[i].active == true)
+		{
+			glColor3ub(b[i].c.r, b[i].c.g, b[i].c.b);
+
+			//Display circle
+			{
+				if (b[i].type == SMALL)
+					circle(b[i].p.x, b[i].p.y, SMALLRAD);
+				else if (b[i].type == MID)
+					circle(b[i].p.x, b[i].p.y, MIDRAD);
+				else if (b[i].type == BIG)
+					circle(b[i].p.x, b[i].p.y, BIGRAD);
+				else if (b[i].type == HUGE)
+					circle(b[i].p.x, b[i].p.y, HUGERAD);
+
+				//display wire 
+				{
+					glColor3f(0, 0, 0);
+					if (b[i].type == SMALL)
+						circle_wire(b[i].p.x, b[i].p.y, SMALLRAD);
+					else if (b[i].type == MID)
+						circle_wire(b[i].p.x, b[i].p.y, MIDRAD);
+					else if (b[i].type == BIG)
+						circle_wire(b[i].p.x, b[i].p.y, BIGRAD);
+					else if (b[i].type == HUGE)
+						circle_wire(b[i].p.x, b[i].p.y, HUGERAD);
+				}
+
+				//display shine
+				{
+					glColor3f(1, 1, 1);
+					if (b[i].type == SMALL)
+						circle(b[i].p.x + -2, b[i].p.y + 2, 3);
+					else if (b[i].type == MID)
+					{
+						glBegin(GL_POLYGON);
+						glVertex2f(b[i].p.x + (MIDRAD - 10) * cos(D2R * 105), b[i].p.y + (MIDRAD - 10) * sin(D2R * 105));
+						glVertex2f(b[i].p.x + (MIDRAD - 10) * cos(D2R * 120), b[i].p.y + (MIDRAD - 10) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (MIDRAD - 10) * cos(D2R * 135), b[i].p.y + (MIDRAD - 10) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (MIDRAD - 10) * cos(D2R * 150), b[i].p.y + (MIDRAD - 10) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (MIDRAD - 10) * cos(D2R * 165), b[i].p.y + (MIDRAD - 10) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (MIDRAD - 16) * cos(D2R * 165), b[i].p.y + (MIDRAD - 16) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (MIDRAD - 16) * cos(D2R * 150), b[i].p.y + (MIDRAD - 16) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (MIDRAD - 16) * cos(D2R * 135), b[i].p.y + (MIDRAD - 16) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (MIDRAD - 16) * cos(D2R * 120), b[i].p.y + (MIDRAD - 16) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (MIDRAD - 16) * cos(D2R * 105), b[i].p.y + (MIDRAD - 16) * sin(D2R * 105));
+						glEnd();
+
+						circle(b[i].p.x + -5, b[i].p.y + 5, 3);
+					}
+					else if (b[i].type == BIG)
+					{
+						glBegin(GL_POLYGON);
+						glVertex2f(b[i].p.x + (BIGRAD - 7) * cos(D2R * 105), b[i].p.y + (BIGRAD - 7) * sin(D2R * 105));
+						glVertex2f(b[i].p.x + (BIGRAD - 7) * cos(D2R * 120), b[i].p.y + (BIGRAD - 7) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (BIGRAD - 7) * cos(D2R * 135), b[i].p.y + (BIGRAD - 7) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (BIGRAD - 7) * cos(D2R * 150), b[i].p.y + (BIGRAD - 7) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (BIGRAD - 7) * cos(D2R * 165), b[i].p.y + (BIGRAD - 7) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (BIGRAD - 22) * cos(D2R * 165), b[i].p.y + (BIGRAD - 22) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (BIGRAD - 22) * cos(D2R * 150), b[i].p.y + (BIGRAD - 22) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (BIGRAD - 22) * cos(D2R * 135), b[i].p.y + (BIGRAD - 22) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (BIGRAD - 22) * cos(D2R * 120), b[i].p.y + (BIGRAD - 22) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (BIGRAD - 22) * cos(D2R * 105), b[i].p.y + (BIGRAD - 22) * sin(D2R * 105));
+						glEnd();
+
+						circle(b[i].p.x + -12, b[i].p.y + 12, 6);
+					}
+					else if (b[i].type == HUGE)
+					{
+						glBegin(GL_POLYGON);
+						glVertex2f(b[i].p.x + (HUGERAD - 10) * cos(D2R * 105), b[i].p.y + (HUGERAD - 10) * sin(D2R * 105));
+						glVertex2f(b[i].p.x + (HUGERAD - 10) * cos(D2R * 120), b[i].p.y + (HUGERAD - 10) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (HUGERAD - 10) * cos(D2R * 135), b[i].p.y + (HUGERAD - 10) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (HUGERAD - 10) * cos(D2R * 150), b[i].p.y + (HUGERAD - 10) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (HUGERAD - 10) * cos(D2R * 165), b[i].p.y + (HUGERAD - 10) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (HUGERAD - 30) * cos(D2R * 165), b[i].p.y + (HUGERAD - 30) * sin(D2R * 165));
+						glVertex2f(b[i].p.x + (HUGERAD - 30) * cos(D2R * 150), b[i].p.y + (HUGERAD - 30) * sin(D2R * 150));
+						glVertex2f(b[i].p.x + (HUGERAD - 30) * cos(D2R * 135), b[i].p.y + (HUGERAD - 30) * sin(D2R * 135));
+						glVertex2f(b[i].p.x + (HUGERAD - 30) * cos(D2R * 120), b[i].p.y + (HUGERAD - 30) * sin(D2R * 120));
+						glVertex2f(b[i].p.x + (HUGERAD - 30) * cos(D2R * 105), b[i].p.y + (HUGERAD - 30) * sin(D2R * 105));
+						glEnd();
+
+						circle(b[i].p.x + -20, b[i].p.y + 20, 6);
+					}
+				}
+			}
+		}
+	}
+}
+
+void disp_Lose_Screen(int scr, int lvl)
+{
+	//background
+	{
+		glBegin(GL_QUADS);
+		glColor3ub(142, 65, 209);
+		glVertex2f(-800, 400);
+		glVertex2f(800, 400);
+
+
+		glColor3ub(47, 7, 59);
+		glVertex2f(800, -400);
+		glVertex2f(-800, -400);
+
+		glEnd();
+	}
+
+	//frames
+	{
+		glLineWidth(10);
+
+		//black
+		{
+			glColor3f(0, 0, 0);
+			glBegin(GL_LINE_LOOP);
+			glVertex2f(-630, 275);
+			glVertex2f(630, 275);
+			glVertex2f(630, -275);
+			glVertex2f(-630, -275);
+			glEnd();
+		}
+
+		//lose message frame
+		{
+			glLineWidth(6);
+			glColor3ub(112, 146, 190);
+			glBegin(GL_LINE_STRIP);
+			glVertex2f(-210, 270);
+			glVertex2f(-210, 170);
+			glVertex2f(210, 170);
+			glVertex2f(210, 270);
+			glEnd();
+		}
+
+		//play again message frame
+		{
+			glColor3ub(112, 146, 190);
+			glBegin(GL_LINE_STRIP);
+			glVertex2f(-420, -270);
+			glVertex2f(-420, -130);
+			glVertex2f(420, -130);
+			glVertex2f(420, -270);
+			glEnd();
+		}
+
+	}
+
+	//messages
+	{
+		glLineWidth(3.5);
+		glColor3ub(242, 125, 214);
+		vprint2(-140, 200, 0.5, "You lose");
+
+		vprint2(-250, 50, 0.5, "Current Level: %d", lvl);
+
+		vprint2(-210, -50, 0.5, "Last Score: %d", scr);
+
+		glColor3ub(0, 0, 0);
+		vprint2(-160, -220, 0.5, "Enter");
+
+		glColor3ub(254, 112, 211);
+		vprint2(-370, -220, 0.5, "Press Enter Play Again");
+	}
+
+	//circles
+	{
+		//left
+		{
+			glColor3ub(102, 203, 197);
+			circle(-450, 25, 50);
+
+			glColor3ub(51, 187, 177);
+			circle(-450, 25, 40);
+
+			glColor3ub(2, 170, 150);
+			circle(-450, 25, 30);
+
+			glColor3ub(1, 128, 117);
+			circle(-450, 25, 20);
+
+			glColor3ub(0, 85, 78);
+			circle(-450, 25, 10);
+
+			glLineWidth(2);
+			glColor3f(0, 0, 0);
+			circle_wire(-450, 25, 52);
+		}
+
+		//right
+		{
+			glColor3ub(102, 203, 197);
+			circle(450, 25, 50);
+
+			glColor3ub(51, 187, 177);
+			circle(450, 25, 40);
+
+			glColor3ub(2, 170, 150);
+			circle(450, 25, 30);
+
+			glColor3ub(1, 128, 117);
+			circle(450, 25, 20);
+
+			glColor3ub(0, 85, 78);
+			circle(450, 25, 10);
+
+			glLineWidth(2);
+			glColor3f(0, 0, 0);
+			circle_wire(450, 25, 52);
+		}
+	}
+}
+
+void disp_Win_Screen(int scr, int lvl, int sec, int times)
+{
+	//background
+	{
+		//big red circle
+		{
+			glBegin(GL_POLYGON);
+
+			//glColor3ub(242, 182, 44);
+			//glColor3ub(255, 255, 0);
+			glColor3ub(0, 255, 0);
+			glVertex2f(0, 0);
+
+			//glColor3ub(255, 40, 60);
+			glColor3ub(100, 200, 200);
+			for (int i = 90; i <= 450; i += 5)
+				glVertex2f(500 * cos(i * D2R), 350 * sin(i * D2R));
+			glEnd();
+		}
+
+		//left blue circle
+		{
+			glBegin(GL_LINES);
+			for (int i = 0; i <= 360; i += 30)
+			{
+				glColor3ub(0, 0, 0);
+				glVertex2f(-750, 0);
+
+				glColor3ub(73, 239, 220);
+				glVertex2f(100 * cos(i * D2R) - 500, 100 * sin(i * D2R));
+			}
+			glEnd();
+		}
+
+		//right blue circle
+		{
+			glBegin(GL_LINES);
+			for (int i = 0; i <= 360; i += 30)
+			{
+				glColor3ub(0, 0, 0);
+				glVertex2f(750, 0);
+
+				glColor3ub(73, 239, 220);
+				glVertex2f(100 * cos(i * D2R) + 500, 100 * sin(i * D2R));
+			}
+			glEnd();
+		}
+	}
+
+	//frames
+	{
+		glBegin(GL_LINE_LOOP);
+		glColor3f(0, 1, 1);
+
+		for (int i = 0; i <= 360; i += 5)
+			glVertex2f(500 * cos(i * D2R), 350 * sin(i * D2R));
+		glEnd();
+	}
+
+	//messages
+	{
+		glLineWidth(5);
+		vprint2(-140, 206, 0.5, "You Win");
+		glColor3f(0, 0, 0);
+		vprint2(-144, 200, 0.5, "You Win");
+
+		glColor3ub(0, 0, 255);
+
+		vprint2(-280, 110, 0.4, "Remaining time %d Sec.", times - sec);
+
+		vprint2(-210, 30, 0.5, "* Score: %d *", scr);
+
+		vprint2(-300, -60, 0.5, "Level %d Completed", lvl);
+
+		glColor3ub(73, 239, 220);
+		vprint2(42, -176, 0.5, "Enter");
+
+		glColor3ub(0, 0, 0);
+		vprint2(40, -178, 0.5, "Enter");
+
+		glColor3ub(50, 100, 255);
+		vprint2(-180, -180, 0.5, "Press Enter ");
+		vprint2(-220, -260, 0.5, "For Next Level", lvl);
+	}
+}
+
+void display() {
+	//
+	// clear window to black
+	//
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+	screen = WINSCREEN;
+	if (screen == PLAYSCREEN)
+	{
+		//display background big rectangle
+		dispbackrec();
+
+		//display frames
+		disp_frames();
+
+		//display informations
+		disp_info();
+
+		//display arrow
+		disp_arrow(a1, p1, lastpoint1);
+		disp_arrow(a2, p2, lastpoint2);
+
+		//display player
+		disp_player(p1);
+		disp_player(p2);
+
+		//display balls
+		disp_balls(ball);
+	}
+
+	else if (screen == LOSESCREEN)
+		disp_Lose_Screen(score, lvl);
+
+	else if (screen == WINSCREEN)
+		disp_Win_Screen(score, lvl, times, timeremain);
+
+
+	glutSwapBuffers();
+}
+
+//
+// key function for ASCII charachters like ESC, a,b,c..,A,B,..Z
+//
+void onKeyDown(unsigned char key, int x, int y)
+{
+	switch (key) {
+	case 'A':
+	case 'a': left1 = true; break;
+
+	case'D':
+	case 'd': right1 = true; break;
+
+	case'w':
+	case'W':
+	case'v':
+	case 'V': up1 = true; break;
+
+	case 32: up = true; break;
+	}
+
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+
+	if (key == 13 && screen == LOSESCREEN)
+		inittolvl(lvl, &lvl, ball, &lastballsize, &p1, &p2, &a1, &a2, &barincrease, &timeremain, &timems, &times, &stop, &screen);
+
+	if (key == 13 && screen == WINSCREEN)
+		inittolvl(lvl + 1, &lvl, ball, &lastballsize, &p1, &p2, &a1, &a2, &barincrease, &timeremain, &timems, &times, &stop, &screen);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+void onKeyUp(unsigned char key, int x, int y)
+{
+	switch (key) {
+	case 'A':
+	case 'a': left1 = false; break;
+
+	case'D':
+	case 'd': right1 = false; break;
+
+	case'w':
+	case'W':
+	case'v':
+	case 'V': up1 = false; break;
+
+	case 32: up = false; break;
+	}
+
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyDown(int key, int x, int y)
+{
+	// Write your codes here.
+	switch (key) {
+	case GLUT_KEY_UP: up = true; break;
+	case GLUT_KEY_DOWN: down = true; break;
+	case GLUT_KEY_LEFT: left = true; break;
+	case GLUT_KEY_RIGHT: right = true; break;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyUp(int key, int x, int y)
+{
+	// Write your codes here.
+	switch (key) {
+	case GLUT_KEY_UP: up = false; break;
+	case GLUT_KEY_DOWN: down = false; break;
+	case GLUT_KEY_LEFT: left = false; break;
+	case GLUT_KEY_RIGHT: right = false; break;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// When a click occurs in the window,
+// It provides which button
+// buttons : GLUT_LEFT_BUTTON , GLUT_RIGHT_BUTTON
+// states  : GLUT_UP , GLUT_DOWN
+// x, y is the coordinate of the point that mouse clicked.
+//
+void onClick(int button, int stat, int x, int y)
+{
+	// GLUT to OpenGL coordinate conversion:
+	x = x - winWidth / 2;
+	y = winHeight / 2 - y;
+
+	if (stat == GLUT_DOWN && button == GLUT_LEFT_BUTTON)
+		printf("%d , %d\n", x, y);
+
+	if (stat == GLUT_DOWN && button == GLUT_RIGHT_BUTTON)
+		printf("glVertex2f(%d , %d);\n", x, y);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// This function is called when the window size changes.
+// w : is the new width of the window in pixels.
+// h : is the new height of the window in pixels.
+//
+void onResize(int w, int h)
+{
+	winWidth = w;
+	winHeight = h;
+	glViewport(0, 0, w, h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(-w / 2, w / 2, -h / 2, h / 2, -1, 1);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	display(); // refresh window.
+}
+
+void onMoveDown(int x, int y) {
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function   
+	glutPostRedisplay();
+}
+
+// GLUT to OpenGL coordinate conversion:
+//   x2 = x1 - winWidth / 2
+//   y2 = winHeight / 2 - y1
+void onMove(int x, int y) {
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+#if TIMER_ON == 1
+void onTimer(int v) {
+
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+	// Write your codes here.
+
+	//check waiting situation when player hit
+	if (stop <= 0 && screen == PLAYSCREEN)
+	{
+		//check win 
+		if (lastballsize == 0)
+			screen = WINSCREEN;
+
+		//check time
+		if (timeremain - times == 0)
+		{
+			stop = 3000;
+		}
+
+		//check if ball hits the player
+		check_ball_hits_player(ball, p1, p2, &lastballsize);
+
+		//move player
+		move_player(&p1, &p2);
+
+		//move arrow
+		move_arrow(&a1);
+		move_arrow(&a2);
+
+
+		//move ball
+		move_ball(ball, &lastballsize);
+
+		//activate arrows
+		if (up == true)
+		{
+			if (a1.active == false)
+			{
+				a1.active = true;
+
+				a1.p.x = p1.p.x;
+				a1.p.y = -242;
+				lastpoint1.x = p1.p.x;
+				lastpoint1.y = p1.p.y;
+			}
+		}
+		if (up1 == true)
+		{
+			if (a2.active == false)
+			{
+				a2.active = true;
+
+				a2.p.x = p2.p.x;
+				a2.p.y = -242;
+				lastpoint2.x = p2.p.x;
+				lastpoint2.y = p2.p.y;
+			}
+		}
+
+		//check arrow hits
+		arrow_Hit(&a1, &a2, ball, &lastballsize);
+
+		//time related
+		{
+			//increase time
+			timems += 16;
+			if (timems >= 1000)
+			{
+				times++;
+				timems -= 1000;
+			}
+		}
+	}
+	if (stop > 0 && screen == PLAYSCREEN)
+	{
+		stop -= 16;
+
+		if (stop <= 0)
+			screen = LOSESCREEN;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay(); // display()
+
+}
+#endif
+
+void Init() {
+
+	inittolvl(0, &lvl, ball, &lastballsize, &p1, &p2, &a1, &a2, &barincrease, &timeremain, &timems, &times, &stop, &screen);
+
+	// Smoothing shapes
+	{
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	}
+
+	//time function
+	{
+		srand(time(NULL));
+	}
+
+}
+
+void main(int argc, char* argv[]) {
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+	glutInitWindowPosition(20, 50);
+	glutCreateWindow("Bubble Splash");
+
+	glutDisplayFunc(display);
+	glutReshapeFunc(onResize);
+
+	//
+	// keyboard registration
+	//
+	glutKeyboardFunc(onKeyDown);
+	glutSpecialFunc(onSpecialKeyDown);
+
+	glutKeyboardUpFunc(onKeyUp);
+	glutSpecialUpFunc(onSpecialKeyUp);
+
+	//
+	// mouse registration
+	//
+	glutMouseFunc(onClick);
+	glutMotionFunc(onMoveDown);
+	glutPassiveMotionFunc(onMove);
+
+#if  TIMER_ON == 1
+	// timer event
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+#endif
+
+	Init();
+
+	glutMainLoop();
+}
